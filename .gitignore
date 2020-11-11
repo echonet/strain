@@ -1,0 +1,9 @@
+.ipynb_checkpoints/
+__pycache__/
+*.swp
+echonet.cfg
+.echonet.cfg
+*.pyc
+echonet.egg-info/
+Weights-20201103T193519Z-001/
+*.pt
