@@ -7,3 +7,4 @@ echonet.cfg
 echonet.egg-info/
 Weights-20201103T193519Z-001/
 *.pt
+*.avi
