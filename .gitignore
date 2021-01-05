@@ -8,3 +8,10 @@ echonet.egg-info/
 Weights-20201103T193519Z-001/
 *.pt
 *.avi
+*.csv
+Dilation_5/
+E_prime/
+fast/
+Midpoint/
+Strain_5/
+strain_plot/
