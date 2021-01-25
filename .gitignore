@@ -7,5 +7,6 @@ echonet.cfg
 echonet.egg-info/
 *.pt
 *.avi
+*.csv
 Example Segmentation/
 Example Analysis/
