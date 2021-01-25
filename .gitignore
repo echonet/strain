@@ -5,25 +5,7 @@ echonet.cfg
 .echonet.cfg
 *.pyc
 echonet.egg-info/
-Weights-20201103T193519Z-001/
 *.pt
 *.avi
-*.csv
-*.png
-Dilation_5/
-E_prime/
-fast/
-Midpoint/
-Strain_5/
-strain_plot/
-Strain_Single_Script_thin_3/
-Strain_Single_Script_thin_2/
-Strain_Single_Script_thin_1/
-Strain_Single_Script_thin_0
-Strain_Single_Script_0/
-Strain_Single_Script_1/
-Strain_Single_Script_2/
-Strain_Single_Script_3/
-Strain_Single_Script_4/
-Strain_Single_Script_5/
-old_notebooks/
+Example Segmentation/
+Example Analysis/
