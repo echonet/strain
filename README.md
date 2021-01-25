@@ -1,2 +1,4 @@
 # echonet_segmentation_analysis
-Downstream of once segmentation is done
+
+
+This repository is for all scripts whose purpose is to go from a segmented echo video to a number.
