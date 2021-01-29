@@ -159,6 +159,7 @@ def obtainContourPoints(img):
 
 def calc_ratio(array,plot_dir,filename,vid=None,save = True):
     if save:
+        plt.clf()
         plt.plot(array)
     x = scipy.signal.find_peaks(-np.array(array),distance=32)[0]
     ratios = []
@@ -176,6 +177,7 @@ def calc_ratio(array,plot_dir,filename,vid=None,save = True):
         ratios.append(x_val/y_val)
     if save:
         plt.savefig(os.path.join(plot_dir,filename[:-3]+'png'))
+        plt.clf()
     ratios.sort()
     return np.mean(ratios[1:-1])
 
