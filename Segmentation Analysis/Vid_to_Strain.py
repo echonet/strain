@@ -476,6 +476,11 @@ def estimate_strain(input_vid,weights,segmentation_dir,strain_dir,plot_dir,excel
 
 
 def smooth_segmentation(x,alpha):
+    """
+    This function smooths the segmentation over between frames.
+    The logic is:
+    the nth frame = alpha * the nth frame + (1-alpha) * the n-1th frame
+    """
     final = [x[0]]
     for i in x[1:]:
         final.append(alpha*i+(1-alpha)*final[-1])
@@ -488,6 +493,9 @@ def collate_fn(x):
     return x, f, i
 
 class Segmentation:
+    """
+    This class exists to avoid having to load the segmentation model for each video.
+    """
     def __init__(self, segmentation_model_checkpoint, mean = np.array([31.834011, 31.95879,  32.082172]) , std = np.array([48.866325, 49.137333, 49.361984])):
         self.mean = mean
         self.std = std
@@ -503,6 +511,10 @@ class Segmentation:
 
         self.model.eval()
     def single_vid_prediction(self,vid,output_folder,flip=True,alpha = 0.9):
+        """
+        This function exists to segment a video. the alpha value smooths the segmentation between frames, adjusting its value would increase its smoothing
+        """
+
         device = torch.device("cuda")
         kwargs = {"target_type": "Filename",
                   "mean": self.mean,
@@ -537,12 +549,12 @@ class Segmentation:
                 oldvideo = oldvideo + self.mean.reshape(1, 3, 1, 1)
 
                 newvideo = oldvideo.copy()
-                # print(y.shape)
+                # This is the line that smooths the segmentation
                 newvideo[:,2,:,:] = np.maximum(newvideo[:,2,:,:], 255. * (smooth_segmentation(y[:, 0, :, :],alpha) > 0))
 
 
                 for (filename, offset) in zip(f,i):
-                    #print(filename, offset, y[start:(start+offset), :, :, :].shape, x[start:(start+offset), :, :, :].shape)
+                    # This line also smooths the segmentation
                     np.save(os.path.join(output_folder, os.path.splitext(filename)[0]), smooth_segmentation(y[start:(start+offset), 0, :, :],alpha))
 
                     #plain videos
