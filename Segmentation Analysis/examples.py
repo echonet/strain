@@ -1,3 +1,10 @@
+"""
+Old code for variance plot
+"""
+
+
+
+
 df = pd.DataFrame({"Filenames":files,"Strain":strains})
 #df.to_csv(os.path.join(basic_dir,'Variance Plot.csv'),index=False)
 
@@ -55,3 +62,8 @@ for i in range(10,len(sorted_df.index)):
         missing+=1
     points.append(len(x))
 plt.savefig(os.path.join(basic_dir,'Variance Plot.png'))
+
+
+
+
+## To produce band altman limits, plot the 95% confidence interval of the mean difference
