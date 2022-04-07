@@ -1,16 +1,8 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
-import cv2
 import cv2
 import numpy as np
+from scipy import signal
 import math
 import typing
-import matplotlib.pyplot as plt
-import os
 import pandas as pd
 import scipy
 import scipy.signal
@@ -23,45 +15,45 @@ import numpy as np
 import shutil
 from multiprocessing import dummy as multiprocessing
 import time
+from scipy import fftpack
 import subprocess
 import datetime
 from datetime import date
 import sys
 import cv2
 import matplotlib.pyplot as plt
+import config
+import loader
 import sys
 from shutil import copy
 import math
 import torch
 import torchvision
 import echonet
-import tqdm
 from shutil import copyfile
 from numpy.linalg import norm
-
+from scipy.signal import lfilter
 
 def show(frame):
     cv2.imshow("test", frame)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
 def plot_point(frame,x,y,color=(0,255,0),radius = 0):
     thickness = -1
     return cv2.circle(frame, (x,y), radius, color, thickness)
+
 def plot_line(frame,p1,p2,color=(0,191,255),thickness = 1):
     return cv2.line(frame, (p1[0],p1[1]), (p2[0],p2[1]), color, thickness)
 
 # Gets all the contours for certain image
-
 def loadvideo(filename: str) -> np.ndarray:
     """Loads a video from a file.
-
     Args:
         filename (str): filename of video
-
     Returns:
         A np.ndarray with dimensions (channels=3, frames, height, width). The
         values will be uint8's ranging from 0 to 255.
-
     Raises:
         FileNotFoundError: Could not find `filename`
         ValueError: An error occurred while reading the video
@@ -90,12 +82,10 @@ def loadvideo(filename: str) -> np.ndarray:
     return v
 def savevideo(filename: str, array: np.ndarray, fps: typing.Union[float, int] = 1):
     """Saves a video to a file.
-
     Args:
         filename (str): filename of video
         array (np.ndarray): video of uint8's with shape (channels=3, frames, height, width)
         fps (float or int): frames per second
-
     Returns:
         None
     """
@@ -113,7 +103,7 @@ def savevideo(filename: str, array: np.ndarray, fps: typing.Union[float, int] = 
 
 def dist(x1,x2):
     return norm(x1-x2)
-        
+
 def select_contours(a):
     """
     This function selects the left ventricle from the set of contours
@@ -121,7 +111,6 @@ def select_contours(a):
     """
     previous_index = 0
     previous_dist = 0
-    # print(len(a))
     for i in range(0,len(a)):
         if len(a[i])>50:
             mean_position = np.mean(np.mean(a[i],axis=-2),axis=0)
@@ -130,9 +119,7 @@ def select_contours(a):
                 previous_index = i
                 previous_dist = distance
     return a[previous_index]
-            
-            
-      
+
 def obtain_lowest_points(img,thresh):
     """
     This function finds the endpoints of the contour by finding the lowest points of the minimum bounding box, this is a key function to improve
@@ -161,16 +148,62 @@ def obtain_lowest_points(img,thresh):
 
     # figure out which indexes are the bottom 2, using the largest y coordinate
     indexes = [0,1]
-    for i in range(0,len(box)):
-        for k in range(0,len(indexes)):
+    for k in range(0,len(indexes)):
+        for i in range(0,len(box)):
             if box[i][1]>box[indexes[k]][1] and not i in indexes:
                 indexes[k]=i
 
     return img, [box[indexes[0]].tolist(),box[indexes[1]].tolist()]
-def moving_average(x, w):
-    return np.convolve(x, np.ones(w), 'valid') / w
 
-def calc_ratio(array,plot_dir,filename,vid=None,save = True,window_size = 3):
+# Filters
+def moving_average(x, w):
+        return np.convolve(x, np.ones(w), 'valid') / w
+
+def convolve_average(arr, span):
+    re = np.convolve(arr, np.ones(span * 2 + 1) / (span * 2 + 1), mode="same")
+
+    re[0] = np.average(arr[:span])
+    for i in range(1, span + 1):
+        re[i] = np.average(arr[:i + span])
+        re[-i] = np.average(arr[-i - span:])
+    return re
+
+def savgol(arr, span):  
+    return scipy.signal.savgol_filter(arr, span * 2 + 1, 0)
+
+def fft(arr, span):
+    w = fftpack.rfft(arr)
+    spectrum = w ** 2
+    cutoff_idx = spectrum < (spectrum.max() * (1 - np.exp(-span / 2000)))
+    w[cutoff_idx] = 0
+    return fftpack.irfft(w)
+
+def passFilter(data, cutoff, fs, type="low"):
+    b, a = signal.butter(cutoff, fs, type)
+    y = signal.filtfilt(b, a, data)
+    return y
+
+#Peak/Valley Finding Algorithm
+def method1(arr):
+    x, y = [], []
+        
+    topNumPercent = int(len(arr) * 0.2)
+    maxThreshold = sorted(arr, reverse=True)[:topNumPercent][-1]
+    minThreshold = sorted(arr, reverse=False)[:topNumPercent][-1]
+    
+    for i in range(len(arr)):
+        if arr[i] > maxThreshold:
+            if arr[i] > arr[i - 1]:
+                if arr[i] > arr[i + 1]:
+                    x.append(arr[i])
+        if arr[i] < minThreshold:
+            if arr[i] < arr[i - 1]:
+                if arr[i] < arr[i + 1]:
+                    y.append(arr[i])
+    return x, y, maxThreshold, minThreshold
+
+#######
+def calc_ratio(array,plot_dir,filename,vid=None,save = True,window_size = 3, smoothening_function="Savgol"):
     """
     This function calculates the ratio of the strain lengths, this is a key function to improve
     the lgoic in this function is:
@@ -187,17 +220,32 @@ def calc_ratio(array,plot_dir,filename,vid=None,save = True,window_size = 3):
         plt.clf()
         plt.plot(array,label = 'Raw Data',alpha=0.7)
     array = [array[0]]+array+[array[-1]]
-    array = moving_average(array,window_size)
+
+    if smoothening_function == "Moving Average":
+        array = moving_average(array,window_size)
+    elif smoothening_function == "ConvolveAverage":
+        array = convolve_average(array, window_size)
+    elif smoothening_function == "Savgol":
+        array = savgol(array, window_size)
+    elif smoothening_function == "FFT":
+        array = fft(array, window_size)
+    else:
+        array = passFilter(array, window_size, 0.1, smoothening_function)
+    
+
     if save:
         plt.plot(array,label = 'Moving Average: '+str(window_size),alpha=0.7)
-    # Get peaks and valleys
+
+    ratios = []
+    maxVal, minVal = [], []
+    maxIndex, minIndex = [], []
+
     x = scipy.signal.find_peaks(-np.array(array),distance=32,width=5,prominence = 12)[0] # valley
     y_array = scipy.signal.find_peaks(np.array(array),distance=32,width=5,prominence = 12)[0] # peak
 
     ratios = []
     for i in range(0,len(x)): # for each valley
         if i < len(y_array): # if there is another peak
-
             x_val = array[x[i]]
             y_val = array[y_array[i]]
             if save:
@@ -227,12 +275,11 @@ def calc_ratio(array,plot_dir,filename,vid=None,save = True,window_size = 3):
         plt.savefig(os.path.join(plot_dir,filename[:-3]+'png'))
         plt.clf()
     ratios.sort()
-    return ratios[1:-1]
-
-
+    return ratios
 
 def midpoint(point1,point2):
     return (point1+point2)/2
+
 def smooth(points):
     """
     Smooth a set of points by finding the midpoint between every pair
@@ -241,9 +288,6 @@ def smooth(points):
     for i in points[1:]:
         point_arr.append(midpoint(point_arr[-1],i))
     return np.array(point_arr)
-
-
-
 
 def get_points(vid,thresh):
     """
@@ -257,6 +301,7 @@ def get_points(vid,thresh):
     take a moving average of the points (half the distance each point moves between frames)
     return the left and right points
     """
+    
     first = np.transpose(vid,(1,2,3,0))
     video = []
     guess = None
@@ -275,9 +320,6 @@ def get_points(vid,thresh):
     right_points = smooth(ok[:,1,:])
     return left_points,right_points
 
-
-
-
 def get_dilation(threshes,dilations = 1):
     """
     This function dilates the segmentation repeatedly, to improve smoothing
@@ -291,8 +333,6 @@ def get_dilation(threshes,dilations = 1):
     
     return np.array(dilated)
 
-
-
 def distance_calc(x1,x2):
     """
     This function calculates the total length of the contour, accounting for the connections it has to make.
@@ -304,8 +344,6 @@ def distance_calc(x1,x2):
     for i in range(0,len(x2)-1):
         total_length += dist(x2[i,0],x2[i+1,0])
     return total_length
-
-
 
 def strain_lengths(vid,threshes,first_points,second_points,filename,strain_dir,plot_dir,excel_dir, window_size = 3,downsample = 2,contour_thickness = 1, point_radius = 0):
     """
@@ -400,6 +438,8 @@ def strain_lengths(vid,threshes,first_points,second_points,filename,strain_dir,p
         right_contour = im2[index2:].copy()
         right_contour = right_contour[::downsample]
         
+        bottom_contour = im2[index:index2].copy()
+        bottom_contour = bottom_contour[::downsample]
         # plot the contour for graphics production
         for k in range(0,len(left_contour)-1):
             plot_line(first[frame],left_contour[k][0],left_contour[k+1][0],color = (0,255,0))
@@ -408,6 +448,9 @@ def strain_lengths(vid,threshes,first_points,second_points,filename,strain_dir,p
         plot_line(first[frame],left_contour[0][0],right_contour[-1][0],color = (0,255,0))
         for k in range(0,len(right_contour)-1):
             plot_line(first[frame],right_contour[k][0],right_contour[k+1][0],color = (0,255,0))
+        
+        for k in range(0,len(bottom_contour)-1):
+            plot_line(first[frame],bottom_contour[k][0],bottom_contour[k+1][0],color = (0,0,255))
         
         # graphically connect the contours to the left and right endpoints
         plot_line(first[frame],right_contour[0][0],[x2,y2],color = (0,255,0),thickness = contour_thickness) # im2[index2-1][0]
@@ -438,12 +481,8 @@ def strain_lengths(vid,threshes,first_points,second_points,filename,strain_dir,p
     return final,calc_ratio(length,plot_dir,filename,window_size = window_size)
 
 
-
-
-
-
-def estimate_strain(input_vid,weights,segmentation_dir,strain_dir,plot_dir,excel_dir,dilations = 10,segmenter = None,flip=True,window_size=3, downsample = 2,output_filename = None,contour_thickness = 1, point_radius = 0):
-    """
+def estimate_strain(input_vid,weights,segmentation_dir,strain_dir,plot_dir,excel_dir,dilations = 1,segmenter = None,flip=False,window_size=3, downsample = 2,output_filename = None,contour_thickness = 1, point_radius = 0):
+    """ 
     Single Function to estimate the strain for any input video, this function should, in additional to calculating the strain, provide the option for saving and producing a plot of contour length by frame, a csv of contour length by frame, and a video of the contour
     The current logic for this function is:
     a) Segment the video
@@ -461,7 +500,7 @@ def estimate_strain(input_vid,weights,segmentation_dir,strain_dir,plot_dir,excel
     # produce the segmentation
     video_file = segmenter.single_vid_prediction(input_vid,segmentation_dir,flip=flip)
     loaded_vid = loadvideo(video_file)
-    thresh = (np.load(video_file[:-4]+'.npy')>0).astype(np.uint8)
+    thresh = (np.load(video_file[:-4]+'.npy')>0).astype(np.uint8) #video_file[:-4]+
     
     # find left and right bottom points
     left,right = get_points(loaded_vid,thresh)
@@ -473,7 +512,34 @@ def estimate_strain(input_vid,weights,segmentation_dir,strain_dir,plot_dir,excel
     measure = strain_lengths(loaded_vid,thresh,left,right,output_filename,strain_dir,plot_dir,excel_dir,window_size=window_size,downsample = downsample,contour_thickness = contour_thickness, point_radius = point_radius)
     return measure[1]
 
+def segment(inp):
+  """Uses pre-trained weights from EchoNet-Dynamic to
+    create segmentation of left ventricular region
+  Args:
+    inp (arr): array object of image to segment
+  Returns:
+    None
+  """
 
+  x = inp.transpose([2, 0, 1])  #  channels-first
+  x = np.expand_dims(x, axis=0)  # adding a batch dimension    
+    
+  mean = x.mean(axis=(0, 2, 3))
+  std = x.std(axis=(0, 2, 3))
+  x = x - mean.reshape(1, 3, 1, 1)
+  x = x / std.reshape(1, 3, 1, 1)
+
+  with torch.no_grad():
+    x = torch.from_numpy(x).type('torch.FloatTensor').to(device)
+    output = model(x)    
+
+  y = output['out'].numpy()
+  y = y.squeeze()
+
+  out = y>0
+
+  mask = inp.copy()
+  mask[out] = np.array([0, 0, 255])
 
 def smooth_segmentation(x,alpha):
     """
@@ -502,25 +568,20 @@ class Segmentation:
         self.model = torchvision.models.segmentation.deeplabv3_resnet50(pretrained = False, aux_loss = False)
         self.model.classifier[-1] = torch.nn.Conv2d(self.model.classifier[-1].in_channels, 1, kernel_size = self.model.classifier[-1].kernel_size)
         
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-            self.model = torch.nn.DataParallel(self.model)
-            self.model.to(device)
-            checkpoint = torch.load(segmentation_model_checkpoint)
-            self.model.load_state_dict(checkpoint['state_dict'])
-
+        self.model = torch.nn.DataParallel(self.model)
+        checkpoint = torch.load(segmentation_model_checkpoint, map_location="cpu")
+        self.model.load_state_dict(checkpoint['state_dict'])
         self.model.eval()
+
     def single_vid_prediction(self,vid,output_folder,flip=True,alpha = 0.9):
         """
         This function exists to segment a video. the alpha value smooths the segmentation between frames, adjusting its value would increase its smoothing
         """
-
-        device = torch.device("cuda")
+        device = torch.device("cpu")
         kwargs = {"target_type": "Filename",
                   "mean": self.mean,
                   "std": self.std
           }
-
         block = 1024
         try:
             shutil.rmtree('temp')
@@ -531,40 +592,26 @@ class Segmentation:
             os.mkdir(output_folder)
         except:
             x=1
-        copyfile(vid, 'temp'+'\\'+vid.split('\\')[-1])
+        copyfile(vid, "temp/" + vid.split('/')[-1])
         test_ds = echonet.datasets.Echo(split = "external_test", external_test_location = 'temp', length = None, period = 1, **kwargs)
         test_dataloader = torch.utils.data.DataLoader(test_ds, batch_size = 10, num_workers = 0, shuffle = False, pin_memory=(device.type == "cuda"), collate_fn = collate_fn)
-
         with torch.no_grad():
             for (x,f,i) in test_dataloader:
                 if flip:
                     x = torch.flip(x,[3])
                 x = x.to(device)
                 y = np.concatenate([self.model(x[i:(i+block),:,:,:])["out"].detach().cpu().numpy() for i in range(0, x.shape[0], block)]).astype(np.float16)
-
                 start = 0
-
                 oldvideo = x.cpu().numpy().copy()
                 oldvideo = oldvideo * self.std.reshape(1, 3, 1, 1)
                 oldvideo = oldvideo + self.mean.reshape(1, 3, 1, 1)
-
                 newvideo = oldvideo.copy()
                 # This is the line that smooths the segmentation
                 newvideo[:,2,:,:] = np.maximum(newvideo[:,2,:,:], 255. * (smooth_segmentation(y[:, 0, :, :],alpha) > 0))
-
-
                 for (filename, offset) in zip(f,i):
                     # This line also smooths the segmentation
                     np.save(os.path.join(output_folder, os.path.splitext(filename)[0]), smooth_segmentation(y[start:(start+offset), 0, :, :],alpha))
-
                     #plain videos
                     echonet.utils.savevideo(os.path.join(output_folder,os.path.splitext(filename)[0] + ".avi"), np.transpose(newvideo[start:(start+offset), :, :, :],(1,0,2,3)).astype(np.uint8), 50)
-                    
                     shutil.rmtree('temp')
                     return os.path.join(output_folder,os.path.splitext(filename)[0] + ".avi")
-
-
-
-
-
-
