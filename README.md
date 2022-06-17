@@ -8,16 +8,7 @@ This project documents the process to obtain deep learning derived LV global lon
 
 ## Processing
 
-You may now run the code using the script_test.py function. For example you can run:
-
-script_test.py -i path_to_input_folder -w path_to_model_weights
-
-There are 5 additional variables:
-1. window size, -s, which controls the size of the moving average
-2. dilations, -d, which controls the number of dilations
-3. downsample, -h, which controls the downsample rate
-4. thickness, -t, which controls how thick the generated lines are
-5. flip, -f, which controls if the echocardiogram is flipped along the verticle axis
+You may now run the code using the Script Test (Ishan).ipynb notebook.
 
 ## Output
 There are 4 relivent folders in the output directory, and one csv.
